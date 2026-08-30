@@ -4,18 +4,26 @@ import android.util.Log
 
 class NativeEngine {
     companion object {
+        private var isLoaded = false
+        private var loadError: String? = null
+
         init {
             try {
                 System.loadLibrary("trans_engine")
+                isLoaded = true
                 Log.i("NativeEngine", "✅ trans_engine kütüphanesi başarıyla yüklendi")
             } catch (e: UnsatisfiedLinkError) {
+                loadError = "Native library not found: ${e.message}"
                 Log.e("NativeEngine", "❌ trans_engine kütüphanesi yüklenemedi: ${e.message}")
-                throw RuntimeException("Native library loading failed", e)
+                Log.e("NativeEngine", "Cihaz bilgisi - CPU_ABI: ${android.os.Build.CPU_ABI}, CPU_ABI2: ${android.os.Build.CPU_ABI2}")
             } catch (e: Exception) {
+                loadError = "Unexpected error: ${e.message}"
                 Log.e("NativeEngine", "❌ Beklenmeyen hata: ${e.message}")
-                throw RuntimeException("Unexpected error loading native library", e)
             }
         }
+
+        fun isNativeLoaded(): Boolean = isLoaded
+        fun getLoadError(): String? = loadError
 
         @JvmStatic
         external fun initSystem(dbPath: String): Boolean

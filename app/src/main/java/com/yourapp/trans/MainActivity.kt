@@ -148,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val json = NativeEngine.translateLive(text, sourceLang, targetLang)
-                val tr = \"\"\"translated\":\"([^\"]*)\"\"\"\".toRegex().find(json)?.groupValues?.get(1) ?: ""
+                val tr = """"translated":"([^"]*)"""".toRegex().find(json)?.groupValues?.get(1) ?: ""
                 runOnUiThread {
                     tvTranslated.text = "🌐 $tr"
                     if (tr.isNotEmpty() && tr != text) tts.speak(tr, TextToSpeech.QUEUE_FLUSH, null, "t")

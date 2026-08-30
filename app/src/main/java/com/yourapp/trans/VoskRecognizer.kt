@@ -85,6 +85,6 @@ class VoskRecognizer(modelPath: String, sampleRate: Float = 16000f) {
     }
 
     private fun extractText(json: String): String {
-        return \"\"\"(?:text|partial)\"\s*:\s\"([^\"]*)\"\"\".toRegex().find(json)?.groupValues?.get(1)?.trim() ?: ""
+        return """"(?:text|partial)"\s*:\s"([^"]*)"""".toRegex().find(json)?.groupValues?.get(1)?.trim() ?: ""
     }
 }

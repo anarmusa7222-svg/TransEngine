@@ -1,0 +1,28 @@
+# Android
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures
+.externalNativeBuild/
+.cxx/
+
+# Rust
+trans_engine/target/
+
+# APK (çok büyük, GitHub'a yükleme)
+*.apk
+*.aab
+
+# Modeller (çok büyük)
+*.bin
+*.zip
+vosk-model-*/
+
+# IDE
+*.swp
+*.swo
+*~

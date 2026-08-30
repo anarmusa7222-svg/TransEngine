@@ -31,8 +31,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvOriginal: TextView
     private lateinit var tvTranslated: TextView
 
-    private lateinit var tts: TextToSpeech
-    private lateinit var modelManager: ModelManager
+    private var tts: TextToSpeech? = null
+    private var modelManager: ModelManager? = null
     private var voskRecognizer: VoskRecognizer? = null
     private var sourceLang = "tr"
     private var targetLang = "en"
@@ -42,13 +42,17 @@ class MainActivity : AppCompatActivity() {
     private var lastSpeechTime = 0L
     private val silenceChecker = object : Runnable {
         override fun run() {
-            if (isRunning && !isSpeaking) {
-                if (System.currentTimeMillis() - lastSpeechTime > 1500L) {
-                    val t = tvOriginal.text.toString().removePrefix("🗣️ ").removeSuffix("...").trim()
-                    if (t.isNotEmpty() && t != "...") translateAndSpeak(t)
+            try {
+                if (isRunning && !isSpeaking) {
+                    if (System.currentTimeMillis() - lastSpeechTime > 1500L) {
+                        val t = tvOriginal.text.toString().removePrefix("🗣️ ").removeSuffix("...").trim()
+                        if (t.isNotEmpty() && t != "...") translateAndSpeak(t)
+                    }
                 }
+                handler.postDelayed(this, 500)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "silenceChecker error: ${e.message}")
             }
-            handler.postDelayed(this, 500)
         }
     }
 
@@ -56,23 +60,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         
-        // Check native library before accessing views
+        // Check native library first
         if (!NativeEngine.isNativeLoaded()) {
             val error = NativeEngine.getLoadError() ?: "Unknown error"
-            Log.e("MainActivity", "❌ Native library failed to load: $error")
-            Toast.makeText(this, "Native library error: $error", Toast.LENGTH_LONG).show()
-            
-            // Initialize UI to show error
-            try {
-                tvStatusEmoji = findViewById(R.id.tvStatusEmoji)
-                tvStatusText = findViewById(R.id.tvStatusText)
-                tvStatusSubtext = findViewById(R.id.tvStatusSubtext)
-                tvStatusEmoji.text = "❌"
-                tvStatusText.text = "Library Error"
-                tvStatusSubtext.text = error
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Failed to show error: ${e.message}")
-            }
+            Log.e("MainActivity", "❌ Native library failed: $error")
+            showError("Library Error", error)
             return
         }
         
@@ -89,119 +81,317 @@ class MainActivity : AppCompatActivity() {
             tvOriginal = findViewById(R.id.tvOriginal)
             tvTranslated = findViewById(R.id.tvTranslated)
         } catch (e: Exception) {
-            Log.e("MainActivity", "Layout inflate hatası: ${e.message}")
-            e.printStackTrace()
-            Toast.makeText(this, "UI Başlatma Hatası: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e("MainActivity", "Layout error: ${e.message}")
+            showError("UI Error", e.message ?: "Failed to load UI")
             return
         }
         
-        btnSwapLang.setOnClickListener { swapLanguages() }
-        modelManager = ModelManager(this)
-        tts = TextToSpeech(this) { s ->
-            if (s == TextToSpeech.SUCCESS) {
-                tts.language = Locale.ENGLISH
-                tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(u: String?) {}
-                    override fun onDone(u: String?) { handler.post { isSpeaking = false; if (isRunning) resumeListening() } }
-                    override fun onError(u: String?) { handler.post { isSpeaking = false; if (isRunning) resumeListening() } }
-                })
-                checkModels()
-            } else {
-                Log.e("MainActivity", "TTS Başlatma Hatası: $s")
-                updateStatus("❌", "Ses Hatası", "TTS başlatılamadı")
+        try {
+            btnSwapLang.setOnClickListener { swapLanguages() }
+            modelManager = ModelManager(this)
+            
+            tts = TextToSpeech(this) { status ->
+                try {
+                    if (status == TextToSpeech.SUCCESS) {
+                        tts?.language = Locale.ENGLISH
+                        tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                            override fun onStart(u: String?) {}
+                            override fun onDone(u: String?) {
+                                handler.post { 
+                                    try {
+                                        isSpeaking = false
+                                        if (isRunning) resumeListening()
+                                    } catch (e: Exception) {
+                                        Log.e("MainActivity", "onDone error: ${e.message}")
+                                    }
+                                }
+                            }
+                            override fun onError(u: String?) {
+                                handler.post { 
+                                    try {
+                                        isSpeaking = false
+                                        if (isRunning) resumeListening()
+                                    } catch (e: Exception) {
+                                        Log.e("MainActivity", "onError error: ${e.message}")
+                                    }
+                                }
+                            }
+                        })
+                        checkModels()
+                    } else {
+                        Log.e("MainActivity", "TTS initialization failed: $status")
+                        updateStatus("❌", "TTS Error", "Failed to initialize")
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "TTS callback error: ${e.message}")
+                }
             }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "onCreate error: ${e.message}")
+            showError("Init Error", e.message ?: "Unknown error")
+        }
+    }
+
+    private fun showError(title: String, message: String) {
+        try {
+            tvStatusEmoji.text = "❌"
+            tvStatusText.text = title
+            tvStatusSubtext.text = message
+            Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun checkModels() {
-        val needEn = !modelManager.isModelDownloaded("en")
-        val needTr = !modelManager.isModelDownloaded("tr")
-        if (needEn || needTr) {
-            updateStatus("📥", "Modeller indiriliyor", "İlk açılış")
-            progressStatus.visibility = View.VISIBLE
-            var done = 0; val total = (if (needTr) 1 else 0) + (if (needEn) 1 else 0)
-            val onDone = { done++; if (done >= total) runOnUiThread { onReady() } }
-            if (needTr) modelManager.downloadModel("tr", { p -> runOnUiThread { tvStatusSubtext.text = "TR: %$p" } }, onDone, { e -> runOnUiThread { updateStatus("❌", "Hata", e) } })
-            if (needEn) modelManager.downloadModel("en", { p -> runOnUiThread { tvStatusSubtext.text = "EN: %$p" } }, onDone, { e -> runOnUiThread { updateStatus("❌", "Hata", e) } })
-        } else onReady()
+        try {
+            val needEn = modelManager?.isModelDownloaded("en") == false
+            val needTr = modelManager?.isModelDownloaded("tr") == false
+            if (needEn || needTr) {
+                updateStatus("📥", "Downloading models", "First launch")
+                progressStatus.visibility = View.VISIBLE
+                var done = 0
+                val total = (if (needTr) 1 else 0) + (if (needEn) 1 else 0)
+                val onDone = { 
+                    done++
+                    if (done >= total) {
+                        runOnUiThread { onReady() }
+                    }
+                }
+                if (needTr) {
+                    modelManager?.downloadModel("tr", 
+                        { p -> runOnUiThread { tvStatusSubtext.text = "TR: $p%" } },
+                        onDone,
+                        { e -> runOnUiThread { updateStatus("❌", "Error", e) } }
+                    )
+                }
+                if (needEn) {
+                    modelManager?.downloadModel("en",
+                        { p -> runOnUiThread { tvStatusSubtext.text = "EN: $p%" } },
+                        onDone,
+                        { e -> runOnUiThread { updateStatus("❌", "Error", e) } }
+                    )
+                }
+            } else {
+                onReady()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "checkModels error: ${e.message}")
+            updateStatus("❌", "Model Error", e.message ?: "Unknown error")
+        }
     }
 
     private fun onReady() {
-        progressStatus.visibility = View.GONE
         try {
-            NativeEngine.initSystem(File(filesDir, "trans.db").absolutePath)
+            progressStatus.visibility = View.GONE
+            val dbPath = File(filesDir, "trans.db").absolutePath
+            Log.i("MainActivity", "Initializing native engine at: $dbPath")
+            NativeEngine.initSystem(dbPath)
+            
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 100)
+            } else {
+                startAuto()
+            }
         } catch (e: Exception) {
-            Log.e("MainActivity", "Native engine başlatma hatası: ${e.message}")
-            updateStatus("❌", "Motor Hatası", e.message ?: "Bilinmeyen hata")
-            return
+            Log.e("MainActivity", "onReady error: ${e.message}")
+            updateStatus("❌", "Engine Error", e.message ?: "Failed to initialize")
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 100)
-        else startAuto()
     }
 
-    override fun onRequestPermissionsResult(c: Int, p: Array<out String>, r: IntArray) {
-        super.onRequestPermissionsResult(c, p, r)
-        if (c == 100 && r.isNotEmpty() && r[0] == PackageManager.PERMISSION_GRANTED) startAuto()
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        try {
+            if (requestCode == 100 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startAuto()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Permission error: ${e.message}")
+        }
     }
 
     private fun startAuto() {
-        if (isRunning) return
-        val mp = modelManager.getModelPath(sourceLang)
-        if (!File(mp).exists()) { updateStatus("❌", "Model yok", mp); return }
         try {
-            voskRecognizer = VoskRecognizer(mp)
-            voskRecognizer?.onPartialResult = { t -> runOnUiThread { if (!isSpeaking) { tvOriginal.text = "🗣️ $t..."; lastSpeechTime = System.currentTimeMillis() } } }
-            voskRecognizer?.onFinalResult = { t -> runOnUiThread { if (!isSpeaking && t.isNotEmpty()) { tvOriginal.text = "🗣️ $t"; translateAndSpeak(t) } } }
-            voskRecognizer?.startListening()
-            isRunning = true; lastSpeechTime = System.currentTimeMillis()
-            updateStatus("🎙️", "Dinleniyor", "Konuşun")
+            if (isRunning) return
+            
+            val modelManager = modelManager
+            if (modelManager == null) {
+                updateStatus("❌", "Error", "Model manager not initialized")
+                return
+            }
+            
+            val mp = modelManager.getModelPath(sourceLang)
+            if (!File(mp).exists()) {
+                Log.e("MainActivity", "Model not found: $mp")
+                updateStatus("❌", "Missing Model", "Path: $mp")
+                return
+            }
+            
+            Log.i("MainActivity", "Creating VoskRecognizer with model: $mp")
+            
+            val recognizer = try {
+                VoskRecognizer(mp)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "❌ Failed to create VoskRecognizer: ${e.message}")
+                e.printStackTrace()
+                updateStatus("❌", "Vosk Error", e.message ?: "Failed to load model")
+                return
+            }
+            
+            // Set callbacks before starting
+            recognizer.onPartialResult = { t ->
+                try {
+                    runOnUiThread {
+                        if (!isSpeaking && t.isNotEmpty()) {
+                            tvOriginal.text = "🗣️ $t..."
+                            lastSpeechTime = System.currentTimeMillis()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "onPartialResult error: ${e.message}")
+                }
+            }
+            
+            recognizer.onFinalResult = { t ->
+                try {
+                    runOnUiThread {
+                        if (!isSpeaking && t.isNotEmpty()) {
+                            tvOriginal.text = "🗣️ $t"
+                            translateAndSpeak(t)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "onFinalResult error: ${e.message}")
+                }
+            }
+            
+            recognizer.onError = { error ->
+                Log.e("MainActivity", "VoskRecognizer error: $error")
+                runOnUiThread {
+                    updateStatus("❌", "Listening Error", error)
+                }
+            }
+            
+            try {
+                recognizer.startListening()
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to start listening: ${e.message}")
+                e.printStackTrace()
+                updateStatus("❌", "Listen Error", e.message ?: "Failed to start")
+                return
+            }
+            
+            voskRecognizer = recognizer
+            isRunning = true
+            lastSpeechTime = System.currentTimeMillis()
+            updateStatus("🎙️", "Listening", "Speak now")
             handler.post(silenceChecker)
+            
+            Log.i("MainActivity", "✅ Listening started successfully")
         } catch (e: Exception) {
-            Log.e("MainActivity", "Vosk başlatma hatası: ${e.message}")
-            updateStatus("❌", "Vosk Hatası", e.message ?: "Bilinmeyen hata")
+            Log.e("MainActivity", "❌ startAuto exception: ${e.message}")
+            e.printStackTrace()
+            updateStatus("❌", "Start Error", e.message ?: "Failed to start listening")
         }
     }
 
     private fun translateAndSpeak(text: String) {
-        if (text.isBlank()) { resumeListening(); return }
-        isSpeaking = true; voskRecognizer?.pauseListening()
+        if (text.isBlank()) {
+            resumeListening()
+            return
+        }
+        
+        isSpeaking = true
+        voskRecognizer?.pauseListening()
+        
         Thread {
             try {
                 val json = NativeEngine.translateLive(text, sourceLang, targetLang)
-                val tr = """"translated"\s*:\s*"([^"]*)"""".toRegex().find(json)?.groupValues?.get(1) ?: ""
+                Log.i("MainActivity", "Translation response: $json")
+                val tr = \"\"\"\"translated\"\\s*:\\s*\"([^\"]*)\"\"\"\".toRegex().find(json)?.groupValues?.get(1) ?: ""
+                
                 runOnUiThread {
-                    tvTranslated.text = "🌐 $tr"
-                    if (tr.isNotEmpty() && tr != text) tts.speak(tr, TextToSpeech.QUEUE_FLUSH, null, "t")
-                    else { isSpeaking = false; resumeListening() }
+                    try {
+                        tvTranslated.text = "🌐 $tr"
+                        if (tr.isNotEmpty() && tr != text) {
+                            tts?.speak(tr, TextToSpeech.QUEUE_FLUSH, null, "t")
+                        } else {
+                            isSpeaking = false
+                            resumeListening()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "UI update error: ${e.message}")
+                        isSpeaking = false
+                        resumeListening()
+                    }
                 }
-            } catch (e: Exception) { 
-                Log.e("MainActivity", "Çeviri hatası: ${e.message}")
-                runOnUiThread { isSpeaking = false; resumeListening() } 
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Translation error: ${e.message}")
+                e.printStackTrace()
+                runOnUiThread {
+                    isSpeaking = false
+                    resumeListening()
+                }
             }
         }.start()
     }
 
     private fun resumeListening() {
-        voskRecognizer?.reset(); voskRecognizer?.resumeListening()
-        tvOriginal.text = "🗣️ ..."; updateStatus("🎙️", "Dinleniyor", "Konuşun")
+        try {
+            voskRecognizer?.reset()
+            voskRecognizer?.resumeListening()
+            tvOriginal.text = "🗣️ ..."
+            updateStatus("🎙️", "Listening", "Speak now")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "resumeListening error: ${e.message}")
+        }
     }
 
     private fun swapLanguages() {
-        val t = sourceLang; sourceLang = targetLang; targetLang = t
-        tvSourceFlag.text = if (sourceLang == "tr") "🇹🇷" else "🇬🇧"
-        tvSourceLang.text = if (sourceLang == "tr") "Türkçe" else "English"
-        tvTargetFlag.text = if (targetLang == "tr") "🇹🇷" else "🇬🇧"
-        tvTargetLang.text = if (targetLang == "tr") "Türkçe" else "English"
-        tts.language = if (targetLang == "en") Locale.ENGLISH else Locale("tr", "TR")
-        if (isRunning) { isRunning = false; handler.removeCallbacks(silenceChecker); voskRecognizer?.release(); startAuto() }
+        try {
+            val t = sourceLang
+            sourceLang = targetLang
+            targetLang = t
+            tvSourceFlag.text = if (sourceLang == "tr") "🇹🇷" else "🇬🇧"
+            tvSourceLang.text = if (sourceLang == "tr") "Türkçe" else "English"
+            tvTargetFlag.text = if (targetLang == "tr") "🇹🇷" else "🇬🇧"
+            tvTargetLang.text = if (targetLang == "tr") "Türkçe" else "English"
+            tts?.language = if (targetLang == "en") Locale.ENGLISH else Locale("tr", "TR")
+            
+            if (isRunning) {
+                isRunning = false
+                handler.removeCallbacks(silenceChecker)
+                voskRecognizer?.release()
+                voskRecognizer = null
+                startAuto()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "swapLanguages error: ${e.message}")
+        }
     }
 
-    private fun updateStatus(e: String, t: String, s: String) { tvStatusEmoji.text = e; tvStatusText.text = t; tvStatusSubtext.text = s }
+    private fun updateStatus(emoji: String, title: String, subtitle: String) {
+        try {
+            tvStatusEmoji.text = emoji
+            tvStatusText.text = title
+            tvStatusSubtext.text = subtitle
+        } catch (e: Exception) {
+            Log.e("MainActivity", "updateStatus error: ${e.message}")
+        }
+    }
 
     override fun onDestroy() {
-        isRunning = false; handler.removeCallbacks(silenceChecker)
-        voskRecognizer?.release(); tts.stop(); tts.shutdown()
+        try {
+            isRunning = false
+            handler.removeCallbacks(silenceChecker)
+            voskRecognizer?.release()
+            voskRecognizer = null
+            tts?.stop()
+            tts?.shutdown()
+            tts = null
+        } catch (e: Exception) {
+            Log.e("MainActivity", "onDestroy error: ${e.message}")
+        }
         super.onDestroy()
     }
 }

@@ -23,68 +23,158 @@ class VoskRecognizer(modelPath: String, sampleRate: Float = 16000f) {
 
     init {
         try {
+            Log.i("VoskRecognizer", "Initializing Vosk with model: $modelPath")
             LibVosk.setLogLevel(LogLevel.WARNINGS)
+            
             model = Model(modelPath)
+            if (model == null) {
+                throw RuntimeException("Failed to create Model object")
+            }
+            
             recognizer = Recognizer(model, sampleRate)
-            Log.i("VoskRecognizer", "✅ Vosk modeli başarıyla yüklendi: $modelPath")
-        } catch (e: Exception) { 
-            Log.e("VoskRecognizer", "❌ Vosk başlatma hatası: ${e.message}")
-            onError?.invoke(e.message ?: "") 
+            if (recognizer == null) {
+                throw RuntimeException("Failed to create Recognizer object")
+            }
+            
+            Log.i("VoskRecognizer", "✅ Vosk initialized successfully")
+        } catch (e: Exception) {
+            Log.e("VoskRecognizer", "❌ Initialization error: ${e.message}")
+            e.printStackTrace()
+            model = null
+            recognizer = null
+            onError?.invoke(e.message ?: "Failed to initialize Vosk")
         }
     }
 
     fun startListening() {
-        if (isListening) return
-        if (model == null || recognizer == null) {
-            Log.e("VoskRecognizer", "Model veya recognizer null")
+        if (isListening) {
+            Log.w("VoskRecognizer", "Already listening")
             return
         }
+        
+        if (model == null) {
+            Log.e("VoskRecognizer", "Model is null")
+            onError?.invoke("Model not loaded")
+            return
+        }
+        
+        if (recognizer == null) {
+            Log.e("VoskRecognizer", "Recognizer is null")
+            onError?.invoke("Recognizer not initialized")
+            return
+        }
+        
         try {
+            Log.i("VoskRecognizer", "Starting listening...")
             val bufSize = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-            audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize)
+            if (bufSize <= 0) {
+                throw RuntimeException("Invalid buffer size: $bufSize")
+            }
+            
+            audioRecord = AudioRecord(MediaRecorder.AudioSource.MIC, 16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize * 2)
+            
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                throw RuntimeException("AudioRecord failed to initialize")
+            }
+            
             audioRecord?.startRecording()
             isListening = true
             
             listeningThread = Thread {
-                val buf = ShortArray(bufSize)
-                while (isListening) {
-                    if (isPaused) { Thread.sleep(100); continue }
-                    try {
-                        val read = audioRecord?.read(buf, 0, buf.size) ?: 0
-                        if (read > 0) {
-                            if (recognizer?.acceptWaveForm(buf, read) == true) {
-                                val t = extractText(recognizer?.result ?: "")
-                                if (t.isNotEmpty()) onFinalResult?.invoke(t)
-                            } else {
-                                val t = extractText(recognizer?.partialResult ?: "")
-                                if (t.isNotEmpty()) onPartialResult?.invoke(t)
+                try {
+                    val buf = ShortArray(bufSize)
+                    while (isListening) {
+                        try {
+                            if (isPaused) {
+                                Thread.sleep(100)
+                                continue
                             }
+                            
+                            val read = audioRecord?.read(buf, 0, buf.size) ?: 0
+                            if (read > 0 && recognizer != null) {
+                                if (recognizer!!.acceptWaveForm(buf, read)) {
+                                    val result = recognizer?.result ?: ""
+                                    val text = extractText(result)
+                                    if (text.isNotEmpty()) {
+                                        onFinalResult?.invoke(text)
+                                    }
+                                } else {
+                                    val partial = recognizer?.partialResult ?: ""
+                                    val text = extractText(partial)
+                                    if (text.isNotEmpty()) {
+                                        onPartialResult?.invoke(text)
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("VoskRecognizer", "Error in listening loop: ${e.message}")
                         }
-                    } catch (e: Exception) { Log.e("VoskRecognizer", "Dinleme hatası: ${e.message}") }
+                    }
+                } catch (e: Exception) {
+                    Log.e("VoskRecognizer", "Listening thread error: ${e.message}")
                 }
             }
             listeningThread?.start()
-            Log.i("VoskRecognizer", "✅ Dinleme başladı")
+            Log.i("VoskRecognizer", "✅ Listening started")
         } catch (e: Exception) {
-            Log.e("VoskRecognizer", "Dinleme başlatma hatası: ${e.message}")
-            onError?.invoke(e.message ?: "")
+            Log.e("VoskRecognizer", "Failed to start listening: ${e.message}")
+            e.printStackTrace()
+            isListening = false
+            onError?.invoke(e.message ?: "Failed to start listening")
         }
     }
 
-    fun pauseListening() { isPaused = true }
-    fun resumeListening() { isPaused = false }
-    fun stopListening() { 
-        isListening = false
-        try { audioRecord?.stop(); audioRecord?.release() } catch (_: Exception) {} 
+    fun pauseListening() {
+        isPaused = true
+        Log.i("VoskRecognizer", "Paused")
     }
-    fun reset() { try { recognizer?.reset() } catch (_: Exception) {} }
-    fun release() { 
-        stopListening()
-        try { recognizer?.close(); model?.close() } catch (_: Exception) {} 
-        Log.i("VoskRecognizer", "✅ Vosk serbest bırakıldı")
+
+    fun resumeListening() {
+        isPaused = false
+        Log.i("VoskRecognizer", "Resumed")
+    }
+
+    fun stopListening() {
+        try {
+            isListening = false
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+            Log.i("VoskRecognizer", "Stopped")
+        } catch (e: Exception) {
+            Log.e("VoskRecognizer", "Error stopping: ${e.message}")
+        }
+    }
+
+    fun reset() {
+        try {
+            recognizer?.reset()
+            Log.i("VoskRecognizer", "Reset")
+        } catch (e: Exception) {
+            Log.e("VoskRecognizer", "Error resetting: ${e.message}")
+        }
+    }
+
+    fun release() {
+        try {
+            stopListening()
+            listeningThread?.join(1000)
+            recognizer?.close()
+            model?.close()
+            recognizer = null
+            model = null
+            Log.i("VoskRecognizer", "✅ Released")
+        } catch (e: Exception) {
+            Log.e("VoskRecognizer", "Error releasing: ${e.message}")
+        }
     }
 
     private fun extractText(json: String): String {
-        return """"(?:text|partial)"\s*:\s"([^"]*)"""".toRegex().find(json)?.groupValues?.get(1)?.trim() ?: ""
+        return try {
+            \"\"\"\"(?:text|partial)\"\\s*:\\s*\"([^\"]*)\"\"\"\".toRegex().find(json)?.groupValues?.get(1)?.trim() ?: ""
+        } catch (e: Exception) {
+            Log.e("VoskRecognizer", "Error extracting text: ${e.message}")
+            ""
+        }
     }
 }

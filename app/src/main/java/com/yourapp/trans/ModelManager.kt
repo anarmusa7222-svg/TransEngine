@@ -21,43 +21,59 @@ class ModelManager(private val context: Context) {
     }
 
     fun isModelDownloaded(lang: String): Boolean {
-        val dir = File(getModelPath(lang))
-        return dir.exists() && dir.listFiles()?.isNotEmpty() == true
+        return try {
+            val dir = File(getModelPath(lang))
+            dir.exists() && dir.listFiles()?.isNotEmpty() == true
+        } catch (e: Exception) {
+            Log.e("ModelManager", "Error checking model: ${e.message}")
+            false
+        }
     }
 
     fun downloadModel(lang: String, onProgress: (Int) -> Unit, onComplete: () -> Unit, onError: (String) -> Unit) {
         val url = if (lang == "en") EN_MODEL_URL else TR_MODEL_URL
         Thread {
             try {
-                Log.i("ModelManager", "Model indiriliyor: $lang from $url")
+                Log.i("ModelManager", "Downloading $lang model from $url")
                 val conn = URL(url).openConnection()
                 val total = conn.contentLength
                 val zis = ZipInputStream(conn.getInputStream())
                 var entry = zis.nextEntry
                 var dl = 0
+                
                 while (entry != null) {
-                    val f = File(context.filesDir, entry.name)
-                    if (entry.isDirectory) { 
-                        f.mkdirs() 
-                    } else {
-                        f.parentFile?.mkdirs()
-                        val out = FileOutputStream(f)
-                        val buf = ByteArray(8192)
-                        var len: Int
-                        while (zis.read(buf).also { len = it } > 0) {
-                            out.write(buf, 0, len); dl += len
-                            if (total > 0) onProgress(dl * 100 / total)
+                    try {
+                        val f = File(context.filesDir, entry.name)
+                        if (entry.isDirectory) {
+                            f.mkdirs()
+                        } else {
+                            f.parentFile?.mkdirs()
+                            val out = FileOutputStream(f)
+                            val buf = ByteArray(8192)
+                            var len: Int
+                            while (zis.read(buf).also { len = it } > 0) {
+                                out.write(buf, 0, len)
+                                dl += len
+                                if (total > 0) {
+                                    onProgress(dl * 100 / total)
+                                }
+                            }
+                            out.close()
                         }
-                        out.close()
+                        zis.closeEntry()
+                    } catch (e: Exception) {
+                        Log.e("ModelManager", "Error writing entry: ${e.message}")
                     }
-                    zis.closeEntry(); entry = zis.nextEntry
+                    entry = zis.nextEntry
                 }
+                
                 zis.close()
-                Log.i("ModelManager", "✅ Model başarıyla indirildi: $lang")
+                Log.i("ModelManager", "✅ $lang model downloaded successfully")
                 onComplete()
-            } catch (e: Exception) { 
-                Log.e("ModelManager", "Model indirme hatası: ${e.message}")
-                onError(e.message ?: "Bilinmeyen hata") 
+            } catch (e: Exception) {
+                Log.e("ModelManager", "Download error: ${e.message}")
+                e.printStackTrace()
+                onError(e.message ?: "Download failed")
             }
         }.start()
     }

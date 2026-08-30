@@ -1,0 +1,5 @@
+# GitHub Actions'da NDK yolu otomatik ayarlanacak
+# Yerel geliştirme için kendi NDK yolunu yaz:
+
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android24-clang"

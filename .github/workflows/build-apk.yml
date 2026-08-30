@@ -1,0 +1,106 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Manuel tetikleme
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Kodu çek
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. Java 17 kur
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    # 3. Rust kur
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android
+
+    # 4. cargo-ndk kur
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
+
+    # 5. Android NDK kur
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install NDK
+      run: sdkmanager "ndk;26.1.10909125"
+
+    # 6. NDK yolunu ayarla
+    - name: Configure NDK path
+      run: |
+        NDK_PATH="$ANDROID_HOME/ndk/26.1.10909125"
+        echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+        echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+        
+        # .cargo/config.toml'i güncelle
+        mkdir -p trans_engine/.cargo
+        cat > trans_engine/.cargo/config.toml << EOF
+        [target.aarch64-linux-android]
+        linker = "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+        ar = "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+        EOF
+
+    # 7. Rust motorunu derle
+    - name: Build Rust engine
+      run: |
+        cd trans_engine
+        cargo ndk -t arm64-v8a -o ../app/src/main/jniLibs build --release
+        ls -lh ../app/src/main/jniLibs/arm64-v8a/
+
+    # 8. Gradle wrapper'a çalıştırma izni ver
+    - name: Make gradlew executable
+      run: chmod +x gradlew
+
+    # 9. Android APK derle
+    - name: Build APK
+      run: ./gradlew assembleDebug --no-daemon
+
+    # 10. APK'yı artifact olarak kaydet
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: TransEngine-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+
+    # 11. Tag push edildiğinde Release oluştur
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: app/build/outputs/apk/debug/app-debug.apk
+        name: TransEngine ${{ github.ref_name }}
+        body: |
+          ## 🎙️ TransEngine ${{ github.ref_name }}
+          
+          Offline canlı tercüman uygulaması.
+          
+          ### 📱 Kurulum
+          1. APK'yı indirin
+          2. Telefona yükleyin
+          3. İlk açılışta modeller indirilecek (~80MB)
+          4. Konuşmaya başlayın!
+          
+          ### ✨ Özellikler
+          - %100 Offline
+          - TR ↔ EN çift yönlü
+          - Otomatik ses algılama
+          - Sesli çıktı
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

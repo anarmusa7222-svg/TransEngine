@@ -55,6 +55,27 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        
+        // Check native library before accessing views
+        if (!NativeEngine.isNativeLoaded()) {
+            val error = NativeEngine.getLoadError() ?: "Unknown error"
+            Log.e("MainActivity", "❌ Native library failed to load: $error")
+            Toast.makeText(this, "Native library error: $error", Toast.LENGTH_LONG).show()
+            
+            // Initialize UI to show error
+            try {
+                tvStatusEmoji = findViewById(R.id.tvStatusEmoji)
+                tvStatusText = findViewById(R.id.tvStatusText)
+                tvStatusSubtext = findViewById(R.id.tvStatusSubtext)
+                tvStatusEmoji.text = "❌"
+                tvStatusText.text = "Library Error"
+                tvStatusSubtext.text = error
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to show error: ${e.message}")
+            }
+            return
+        }
+        
         try {
             tvStatusEmoji = findViewById(R.id.tvStatusEmoji)
             tvStatusText = findViewById(R.id.tvStatusText)
@@ -148,7 +169,7 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val json = NativeEngine.translateLive(text, sourceLang, targetLang)
-                val tr = """"translated":"([^"]*)"""".toRegex().find(json)?.groupValues?.get(1) ?: ""
+                val tr = """"translated"\s*:\s*"([^"]*)"""".toRegex().find(json)?.groupValues?.get(1) ?: ""
                 runOnUiThread {
                     tvTranslated.text = "🌐 $tr"
                     if (tr.isNotEmpty() && tr != text) tts.speak(tr, TextToSpeech.QUEUE_FLUSH, null, "t")

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp" android:background="?attr/colorSurface">
+    <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" app:cardCornerRadius="24dp" app:cardBackgroundColor="?attr/colorPrimary">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp" android:gravity="center">
+            <com.google.android.material.progressindicator.CircularProgressIndicator android:id="@+id/progressStatus" android:layout_width="wrap_content" android:layout_height="wrap_content" app:indicatorColor="?attr/colorOnPrimary" android:indeterminate="true"/>
+            <TextView android:id="@+id/tvStatusEmoji" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🎙️" android:textSize="64sp"/>
+            <TextView android:id="@+id/tvStatusText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Başlatılıyor..." android:textSize="20sp" android:textStyle="bold" android:textColor="?attr/colorOnPrimary"/>
+            <TextView android:id="@+id/tvStatusSubtext" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Bekleyin" android:textSize="14sp" android:textColor="?attr/colorOnPrimary"/>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+    <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" app:cardCornerRadius="20dp" android:layout_marginTop="16dp" android:layout_marginBottom="16dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center" android:padding="16dp">
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                <TextView android:id="@+id/tvSourceFlag" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🇹🇷" android:textSize="40sp"/>
+                <TextView android:id="@+id/tvSourceLang" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Türkçe" android:textSize="14sp" android:textStyle="bold"/>
+            </LinearLayout>
+            <com.google.android.material.button.MaterialButton android:id="@+id/btnSwapLang" style="@style/Widget.Material3.Button.IconButton.Filled" android:layout_width="56dp" android:layout_height="56dp" android:text="⇄" android:textSize="20sp"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center">
+                <TextView android:id="@+id/tvTargetFlag" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🇬🇧" android:textSize="40sp"/>
+                <TextView android:id="@+id/tvTargetLang" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="English" android:textSize="14sp" android:textStyle="bold"/>
+            </LinearLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+    <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" app:cardCornerRadius="16dp" app:cardBackgroundColor="?attr/colorSurfaceVariant">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🗣️ Duyulan" android:textSize="12sp" android:textStyle="bold"/>
+            <TextView android:id="@+id/tvOriginal" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="..." android:textSize="18sp" android:layout_marginTop="8dp" android:minLines="2"/>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+    <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content" app:cardCornerRadius="16dp" app:cardBackgroundColor="?attr/colorPrimaryContainer" android:layout_marginTop="16dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="🌐 Çeviri" android:textSize="12sp" android:textStyle="bold"/>
+            <TextView android:id="@+id/tvTranslated" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="..." android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="8dp" android:minLines="2"/>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+</LinearLayout>

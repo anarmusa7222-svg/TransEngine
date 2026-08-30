@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TransEngine</string>
+    <string name="status_listening">Dinleniyor</string>
+    <string name="status_translating">Çeviriliyor</string>
+    <string name="status_initializing">Başlatılıyor</string>
+    <string name="status_downloading">Modeller indiriliyor</string>
+    <string name="lang_turkish">Türkçe</string>
+    <string name="lang_english">English</string>
+    <string name="button_swap">⇄</string>
+    <string name="label_heard">🗣️ Duyulan</string>
+    <string name="label_translation">🌐 Çeviri</string>
+    <string name="error_no_permission">Mikrofon izni gerekli</string>
+    <string name="error_no_model">Model bulunamadı</string>
+    <string name="waiting">Bekleyin</string>
+</resources>
